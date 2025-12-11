@@ -43,15 +43,3 @@ cv_model <- train(
 )
 print(cv_model)
 
-Boston$medv_class <- ifelse(Boston$medv >= 25, 1 , 0)
-
-logistic_model <- glm( medv_class ~ lstat * rm, data=Boston, family="binomial")
-summary(logistic_model)
-
-pred_probs <- predict(logistic_model, type="response")
-roc_curve <- roc(Boston$medv, pred_probs)
-
-plot(roc_curve, main="roc for logistic reg model", col="blue")
-abline(a=0,b=1,lty=2,col="red")
-
-cat(auc(roc_curve))
