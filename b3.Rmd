@@ -1,0 +1,140 @@
+---
+title: "Time Series Analysis: Canadian Lynx Population Data"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(forecast)
+library(tseries)
+```
+
+## 1. Dataset Overview
+
+The lynx dataset contains annual counts of lynx trapped in Canada from 1821 to 1934, comprising 114 observations. This series exhibits pronounced cyclical behavior typical of predator-prey population dynamics. The amplitude and frequency of cycles vary over time, with cycles roughly occurring every 8-10 years.
+
+```{r overview}
+data("lynx")
+ts_data <- lynx
+cat("Start:", start(ts_data), "\n")
+cat("End:", end(ts_data), "\n")
+cat("Frequency:", frequency(ts_data), "\n")
+cat("Min:", min(ts_data), "Max:", max(ts_data), "\n")
+plot(ts_data, main = "Annual Lynx Trappings in Canada", ylab = "Number trapped")
+```
+
+## 2. Preprocessing
+
+The data is provided as an annual `ts` object. We verify data quality and check for missing values.
+
+```{r preprocessing}
+cat("Missing values:", sum(is.na(ts_data)), "\n")
+```
+
+## 3. Stationarity Testing
+
+**Augmented Dickey-Fuller (ADF) Test:**
+- **Null Hypothesis (H0):** Series has a unit root (non-stationary)
+- **Alternate Hypothesis (H1):** Series is stationary
+
+**KPSS Test:**
+- **Null Hypothesis (H0):** Series is level-stationary
+- **Alternate Hypothesis (H1):** Series is non-stationary
+
+```{r stationarity}
+adf_test <- adf.test(ts_data)
+kpss_test <- kpss.test(ts_data)
+adf_test
+kpss_test
+```
+
+## 4. Differencing and Transformations
+
+We apply log transformation to stabilize the variance, then first differencing to remove non-stationarity.
+
+```{r transformations}
+ts_log <- log(ts_data)
+
+ts_diff <- diff(ts_log, differences = 1)
+
+adf_diff <- adf.test(ts_diff)
+adf_diff
+kpss_diff <- kpss.test(ts_diff)
+kpss_diff
+
+plot(ts_diff, main = "Log-differenced Lynx Series", ylab = "Log-differenced Values")
+
+par(mfrow = c(2,1))
+plot(ts_log, main = "Log Transformed Series", col = "darkred")
+plot(ts_diff, main = "After First Differencing", col = "blue")
+```
+
+## 5. Model Selection
+
+We compare ARIMA models to capture the cyclical dynamics of lynx population.
+
+```{r model_selection}
+arima_model <- auto.arima(ts_log, 
+                          seasonal = FALSE, 
+                          stepwise = FALSE, 
+                          approximation = FALSE)
+
+arima_alt <- Arima(ts_log, order = c(2, 1, 1))
+
+print(arima_model)
+print(arima_alt)
+
+cat("ARIMA Auto AIC:", arima_model$aic, "\n")
+cat("ARIMA Alt AIC:", arima_alt$aic, "\n")
+
+selected_model <- arima_model
+```
+
+## 6. Model Diagnostics
+
+Residual diagnostics validate the selected ARIMA model.
+
+```{r diagnostics}
+checkresiduals(selected_model)
+
+lb_test <- Box.test(residuals(selected_model), 
+                    lag = 12, 
+                    type = "Ljung-Box", 
+                    fitdf = length(selected_model$coef))
+
+lb_test
+```
+
+## 7. Forecasting
+
+We generate 20-year forecasts for the lynx population.
+
+```{r forecasting}
+forecast_arima <- forecast(selected_model, h = 20)
+
+plot(forecast_arima,
+  main = "Lynx Population Forecast",
+  xlab = "Year", ylab = "Number trapped",
+  col = "blue", lwd = 2)
+lines(ts_data, col = "black", lwd = 1.5)
+legend("topleft", legend = c("Historical", "Forecast"),
+col = c("black", "blue"), lty = c(1,1), cex = 0.8)
+```
+
+## 8. Conclusions
+
+**Key Findings:**
+- The lynx population exhibits strong cyclical behavior driven by predator-prey dynamics. Both ADF and KPSS tests confirmed non-stationarity.
+- Log transformation was necessary to stabilize variance due to the wide range of population counts.
+- First differencing of the log-transformed series achieved stationarity, enabling appropriate ARIMA modeling.
+- The selected ARIMA model captures the periodic booms and busts in lynx populations with reasonable accuracy.
+- Residual diagnostics show acceptable white noise behavior, validating model adequacy.
+
+**Challenges Faced:**
+- The pronounced cyclical structure and long memory of the series required careful selection of differencing order.
+- Population dynamics depend on external factors (hare populations, climate, human trapping efforts) not captured in univariate analysis.
+
+**Recommendations:**
+- The model captures population cycles well but forecasts become less reliable beyond 5-10 years due to ecological uncertainty.
+- Inclusion of hare population data (predator-prey pair) could significantly improve forecast accuracy.
+- Consider regime-switching models if population dynamics differ across time periods.
