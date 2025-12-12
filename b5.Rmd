@@ -1,0 +1,147 @@
+---
+title: "Time Series Analysis: US Accidental Deaths"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(forecast)
+library(tseries)
+```
+
+## 1. Dataset Overview
+
+The USAccDeaths dataset contains monthly counts of accidental deaths in the United States from 1973 to 1978, comprising 72 observations. The series shows a clear seasonal pattern with peaks during summer months (higher accident rates due to increased travel and outdoor activities) and troughs in winter months.
+
+```{r overview}
+data("USAccDeaths")
+ts_data <- USAccDeaths
+cat("Start:", start(ts_data), "\n")
+cat("End:", end(ts_data), "\n")
+cat("Frequency:", frequency(ts_data), "\n")
+cat("Min:", min(ts_data), "Max:", max(ts_data), "\n")
+plot(ts_data, main = "Monthly Accidental Deaths in the US", ylab = "Number of Deaths")
+```
+
+## 2. Preprocessing
+
+The data is provided as a monthly `ts` object. We verify data quality and check for missing values.
+
+```{r preprocessing}
+cat("Missing values:", sum(is.na(ts_data)), "\n")
+```
+
+## 3. Stationarity Testing
+
+**Augmented Dickey-Fuller (ADF) Test:**
+- **Null Hypothesis (H0):** Series has a unit root (non-stationary)
+- **Alternate Hypothesis (H1):** Series is stationary
+
+**KPSS Test:**
+- **Null Hypothesis (H0):** Series is level-stationary
+- **Alternate Hypothesis (H1):** Series is non-stationary
+
+```{r stationarity}
+adf_test <- adf.test(ts_data)
+kpss_test <- kpss.test(ts_data)
+adf_test
+kpss_test
+```
+
+## 4. Differencing and Transformations
+
+We apply seasonal differencing to remove the strong 12-month seasonal pattern.
+
+```{r transformations}
+ts_seas_diff <- diff(ts_data, lag = 12)
+
+adf_seas <- adf.test(ts_seas_diff)
+adf_seas
+
+ts_diff <- diff(ts_seas_diff, differences = 1)
+
+adf_diff <- adf.test(ts_diff)
+adf_diff
+kpss_diff <- kpss.test(ts_diff)
+kpss_diff
+
+plot(ts_diff, main = "Differenced Accidental Deaths (Seasonal + First)", ylab = "Differenced Values")
+
+par(mfrow = c(3,1))
+plot(ts_data, main = "Original Series", col = "darkred")
+plot(ts_seas_diff, main = "After Seasonal Differencing (lag=12)", col = "darkgreen")
+plot(ts_diff, main = "After Regular + Seasonal Differencing", col = "blue")
+```
+
+## 5. Model Selection
+
+We compare ARIMA and SARIMA models to select the best fit for this seasonal mortality data.
+
+```{r model_selection}
+arima_model <- auto.arima(ts_data, 
+                          seasonal = FALSE, 
+                          stepwise = FALSE, 
+                          approximation = FALSE)
+
+sarima_model <- auto.arima(ts_data, 
+                           seasonal = TRUE, 
+                           stepwise = FALSE, 
+                           approximation = FALSE)
+
+print(arima_model)
+print(sarima_model)
+
+cat("ARIMA AIC:", arima_model$aic, "\n")
+cat("SARIMA AIC:", sarima_model$aic, "\n")
+
+selected_model <- sarima_model
+```
+
+## 6. Model Diagnostics
+
+Residual diagnostics validate the selected SARIMA model.
+
+```{r diagnostics}
+checkresiduals(selected_model)
+
+lb_test <- Box.test(residuals(selected_model), 
+                    lag = 12, 
+                    type = "Ljung-Box", 
+                    fitdf = length(selected_model$coef))
+
+lb_test
+```
+
+## 7. Forecasting
+
+We generate 24-month forecasts for accidental deaths.
+
+```{r forecasting}
+forecast_sarima <- forecast(sarima_model, h = 24)
+plot(forecast_sarima,
+  main = "Accidental Deaths Forecast",
+  xlab = "Year", ylab = "Number of Deaths",
+  col = "blue", lwd = 2)
+lines(fitted(sarima_model), col = "red", lty = 2)
+legend("topleft", legend = c("Historical", "Fitted", "Forecast"),
+col = c("black", "red", "blue"), lty = c(1,2,1), cex = 0.8)
+```
+
+## 8. Conclusions
+
+**Key Findings:**
+- US accidental deaths exhibit strong seasonal variation with peaks in summer months due to increased travel and outdoor activities.
+- Both ADF and KPSS tests confirmed non-stationarity, necessitating seasonal differencing for model specification.
+- SARIMA model significantly outperforms ARIMA (lower AIC), confirming that seasonal component is critical for mortality forecasting.
+- Residual diagnostics show white noise behavior, validating model adequacy for short-term forecasting.
+- Forecasts show expected seasonal peaks and troughs with consistent pattern over the forecast horizon.
+
+**Challenges Faced:**
+- Limited data span (6 years) restricts the ability to model longer-term trends in accident reduction due to safety improvements.
+- External factors (road conditions, holiday periods, weather) affecting accidents are not captured in univariate analysis.
+
+**Recommendations:**
+- Forecasts are reliable for 3-6 months ahead due to strong seasonal predictability.
+- For policy makers, consider that long-term reductions in accident rates due to safety regulations are not captured by this model.
+- Incorporate exogenous variables (holidays, weather, economic activity) for improved forecast accuracy.
+- Update model regularly with recent data to capture changes in traffic patterns and safety measures.
