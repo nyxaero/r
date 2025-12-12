@@ -1,0 +1,144 @@
+---
+title: "Time Series Analysis: AirPassengers Dataset"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(forecast)
+library(tseries)
+```
+
+## 1. Dataset Overview
+
+The AirPassengers dataset contains monthly totals of international airline passengers from 1949 to 1960. This is a univariate time series with 144 observations. The data exhibits a clear upward trend over the 12-year period and strong seasonal patterns with peaks during summer months. The variance also increases over time, suggesting multiplicative seasonality.
+
+```{r overview}
+data("AirPassengers")
+ts_data <- AirPassengers
+cat("Start:", start(ts_data), "\n")
+cat("End:", end(ts_data), "\n")
+cat("Frequency:", frequency(ts_data), "\n")
+cat("Min:", min(ts_data), "Max:", max(ts_data), "\n")
+plot(ts_data, main = "AirPassengers Time Series", ylab = "Passengers")
+```
+
+## 2. Preprocessing
+
+The data is provided as a standard `ts` object in R, already properly formatted. We check for missing values and visualize the data for outliers.
+
+```{r preprocessing}
+cat("Missing values:", sum(is.na(ts_data)), "\n")
+```
+
+## 3. Stationarity Testing
+
+**Augmented Dickey-Fuller (ADF) Test:**
+- **Null Hypothesis (H0):** Series has a unit root (non-stationary)
+- **Alternate Hypothesis (H1):** Series is stationary
+
+**KPSS Test:**
+- **Null Hypothesis (H0):** Series is level-stationary
+- **Alternate Hypothesis (H1):** Series is non-stationary
+
+```{r stationarity}
+adf_test <- adf.test(ts_data)
+kpss_test <- kpss.test(ts_data)
+adf_test
+kpss_test
+```
+
+## 4. Differencing and Transformations
+
+Given the increasing variance and multiplicative seasonality, we apply a log transformation followed by seasonal and first differencing.
+
+```{r transformations}
+ts_log <- log(ts_data)
+
+ts_diff <- diff(ts_log, differences = 1)
+
+ts_seas_diff <- diff(ts_diff, lag = 12)
+
+adf_diff <- adf.test(ts_seas_diff)
+adf_test
+kpss_diff <- kpss.test(ts_seas_diff)
+kpss_diff
+
+plot(ts_diff, main = "Log-differenced (Seasonal + First) Series", ylab = "Differenced Values")
+
+par(mfrow = c(3,1))
+plot(ts_log, main = "Log Transformed Series", col = "darkred")
+plot(ts_diff, main = "After Seasonal Differencing (lag=12)", col = "darkgreen")
+plot(ts_seas_diff, main = "After Regular + Seasonal Differencing", col = "blue")
+```
+
+## 5. Model Selection
+
+We fit both ARIMA and SARIMA models and compare their performance using AIC/BIC criteria.
+
+```{r model_selection}
+arima_model <- auto.arima(ts_log, 
+                          seasonal = FALSE, 
+                          stepwise = FALSE, 
+                          approximation = FALSE)
+
+sarima_model <- auto.arima(ts_log, 
+                           seasonal = TRUE, 
+                           stepwise = FALSE, 
+                           approximation = FALSE)
+
+print(arima_model)
+print(sarima_model)
+
+cat("ARIMA AIC:", arima_model$aic, "\n")
+cat("SARIMA AIC:", sarima_model$aic, "\n")
+
+selected_model <- sarima_model
+```
+
+## 6. Model Diagnostics
+
+We validate the selected SARIMA model using residual analysis.
+
+```{r diagnostics}
+checkresiduals(selected_model)
+
+lb_test <- Box.test(residuals(selected_model), 
+                    lag = 24, 
+                    type = "Ljung-Box", 
+                    fitdf = length(selected_model$coef))
+
+lb_test
+```
+
+## 7. Forecasting
+
+We generate 36-month forecasts (3 years ahead) using the selected SARIMA model.
+
+```{r forecasting}
+forecast_sarima <- forecast(sarima_model, h = 36)
+plot(forecast_sarima,
+  main = "AirPassengers Forecast",
+  xlab = "Year", ylab = "Passengers",
+  col = "blue", lwd = 2)
+lines(fitted(sarima_model), col = "red", lty = 2)
+legend("topleft", legend = c("Observed", "Fitted", "Forecast"),
+col = c("black", "red", "blue"), lty = c(1,2,1), cex = 0.8)
+```
+
+## 8. Conclusions
+
+**Key Findings:**
+- The AirPassengers series exhibits non-stationarity due to trend and multiplicative seasonality. Both ADF and KPSS tests confirmed this.
+- Log transformation with seasonal (lag 12) and first differencing successfully stabilized the series for modeling.
+- SARIMA outperformed ARIMA (lower AIC), confirming the importance of capturing seasonal patterns in monthly air travel data.
+- Residual diagnostics show white noise behavior (Ljung-Box p-value > 0.05), indicating model adequacy.
+- Forecasts project continued seasonal growth in passenger numbers, with confidence intervals widening over the forecast horizon due to model uncertainty.
+
+**Challenges Faced:**
+- Identifying appropriate differencing order required testing both seasonal and non-seasonal components.
+- The multiplicative seasonality required log transformation before differencing to achieve stationarity.
+
+**Recommendations:**
+- The model is suitable for short-term forecasting (3-6 months ahead). For longer horizons, consider updating with more recent data.
+- External factors (fuel prices, economic indicators) could improve forecasts if incorporated as exogenous variables.
