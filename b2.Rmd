@@ -1,0 +1,140 @@
+---
+title: "Time Series Analysis: Nottingham Monthly Temperatures"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(forecast)
+library(tseries)
+```
+
+## 1. Dataset Overview
+
+The nottem dataset contains monthly average temperatures (in degrees Fahrenheit) recorded in Nottingham from 1920 to 1939, spanning 240 observations. The series exhibits strong seasonal patterns with cold winters and warm summers, typical of temperate climate regions. The data shows relatively stable variance and no apparent long-term trend.
+
+```{r overview}
+data("nottem")
+ts_data <- nottem
+cat("Start:", start(ts_data), "\n")
+cat("End:", end(ts_data), "\n")
+cat("Frequency:", frequency(ts_data), "\n")
+cat("Min:", min(ts_data), "Max:", max(ts_data), "\n")
+plot(ts_data, main = "Monthly Temperatures in Nottingham", ylab = "Temperature (°F)")
+```
+
+## 2. Preprocessing
+
+The data is provided as a `ts` object. We verify data quality and check for any missing values or anomalies.
+
+```{r preprocessing}
+cat("Missing values:", sum(is.na(ts_data)), "\n")
+```
+
+## 3. Stationarity Testing
+
+**Augmented Dickey-Fuller (ADF) Test:**
+- **Null Hypothesis (H0):** Series has a unit root (non-stationary)
+- **Alternate Hypothesis (H1):** Series is stationary
+
+**KPSS Test:**
+- **Null Hypothesis (H0):** Series is level-stationary
+- **Alternate Hypothesis (H1):** Series is non-stationary
+
+```{r stationarity}
+adf_test <- adf.test(ts_data)
+kpss_test <- kpss.test(ts_data)
+adf_test
+kpss_test
+```
+
+## 4. Differencing and Transformations
+
+We apply seasonal differencing to remove the strong 12-month seasonal pattern.
+
+```{r transformations}
+ts_seas_diff <- diff(ts_data, lag = 12)
+
+adf_seas <- adf.test(ts_seas_diff)
+adf_seas
+kpss_seas <- kpss.test(ts_seas_diff)
+kpss_seas
+
+plot(ts_seas_diff, main = "Seasonally Differenced Temperature Series", ylab = "Temperature Change")
+
+par(mfrow = c(2,1))
+plot(ts_data, main = "Original Series", col = "darkred")
+plot(ts_seas_diff, main = "After Seasonal Differencing (lag=12)", col = "blue")
+```
+
+## 5. Model Selection
+
+We compare ARIMA and SARIMA models to select the best fit for this seasonal temperature data.
+
+```{r model_selection}
+arima_model <- auto.arima(ts_data, 
+                          seasonal = FALSE, 
+                          stepwise = FALSE, 
+                          approximation = FALSE)
+
+sarima_model <- auto.arima(ts_data, 
+                           seasonal = TRUE, 
+                           stepwise = FALSE, 
+                           approximation = FALSE)
+
+print(arima_model)
+print(sarima_model)
+
+cat("ARIMA AIC:", arima_model$aic, "\n")
+cat("SARIMA AIC:", sarima_model$aic, "\n")
+
+selected_model <- sarima_model
+```
+
+## 6. Model Diagnostics
+
+Residual diagnostics validate the adequacy of the selected SARIMA model.
+
+```{r diagnostics}
+checkresiduals(selected_model)
+
+lb_test <- Box.test(residuals(selected_model), 
+                    lag = 24, 
+                    type = "Ljung-Box", 
+                    fitdf = length(selected_model$coef))
+
+lb_test
+```
+
+## 7. Forecasting
+
+We forecast temperatures for the next 36 months (3 years).
+
+```{r forecasting}
+forecast_sarima <- forecast(sarima_model, h = 36)
+plot(forecast_sarima,
+  main = "Temperature Forecast for Nottingham",
+  xlab = "Year", ylab = "Temperature (°F)",
+  col = "blue", lwd = 2)
+lines(fitted(sarima_model), col = "red", lty = 2)
+legend("topright", legend = c("Observed", "Fitted", "Forecast"),
+col = c("black", "red", "blue"), lty = c(1,2,1), cex = 0.8)
+```
+
+## 8. Conclusions
+
+**Key Findings:**
+- The Nottingham temperature series demonstrates strong annual seasonality with minimal long-term trend, typical of climate data.
+- Initial stationarity tests showed conflicting results (ADF vs KPSS), but seasonal differencing resolved the non-stationarity issue.
+- SARIMA model outperforms ARIMA (lower AIC), confirming the importance of the seasonal component for temperature forecasting.
+- Residual diagnostics validate model adequacy with white noise behavior.
+- Forecasts show repeating seasonal cycles as expected for temperature data, with consistent amplitude over time.
+
+**Challenges Faced:**
+- Conflicting stationarity test results required careful interpretation and seasonal differencing to resolve.
+- The strength of seasonality necessitated a seasonal model specification.
+
+**Recommendations:**
+- Temperature forecasts are reliable for 6-12 months ahead due to predictable seasonal patterns.
+- Climate change may alter long-term patterns; model should be updated periodically with recent data.
+- Consider incorporating external variables (latitude, altitude) if analyzing multiple locations.
